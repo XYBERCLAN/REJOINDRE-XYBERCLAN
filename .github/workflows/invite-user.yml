@@ -4,6 +4,9 @@ on:
   issues:
     types: [opened, edited]
 
+permissions:
+  issues: write
+
 jobs:
   invite:
     runs-on: ubuntu-latest
@@ -11,39 +14,20 @@ jobs:
       contains(github.event.issue.labels.*.name, 'join') ||
       startsWith(github.event.issue.title, '[Join Request]')
     steps:
-      - name: Extract Email and Invite
+      - name: Invite Issue Author
         uses: actions/github-script@v7
         with:
-          # Using a secret is the secure way to handle tokens.
-          # Please add your token as a secret named ORG_INVITATION_TOKEN in your repo settings.
           github-token: "${{ secrets.ORG_INVITATION_TOKEN }}"
           script: |
-            const issueBody = context.payload.issue.body;
-            console.log("Issue Body:", issueBody);
-
-            // Robust regex to find the first email address anywhere in the body
-            const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i;
-            const match = issueBody.match(emailRegex);
-
-            if (!match) {
-              console.log("No email found in issue body.");
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: "❌ Could not find a valid email address in your request. Please make sure to provide it in the format: **Email:** your-email@example.com"
-              });
-              return;
-            }
-
-            const email = match[1];
-            const org = "CYBERCLAN237";
+            const org = "XYBERCLAN";
+            const inviteeId = context.payload.issue.user.id;
+            const inviteeLogin = context.payload.issue.user.login;
 
             try {
-              console.log(`Inviting ${email} to ${org}...`);
+              console.log(`Inviting ${inviteeLogin} (id: ${inviteeId}) to ${org}...`);
               await github.rest.orgs.createInvitation({
                 org: org,
-                email: email,
+                invitee_id: inviteeId,
                 role: 'direct_member'
               });
 
@@ -51,7 +35,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body: `✅ We have reviewed your request and an invitation to join **XYBERCLAN** has been sent to **${email}**! Please check your inbox to accept it.`
+                body: `✅ Invitation sent to **@${inviteeLogin}** to join **${org}**! Check your GitHub notifications or email to accept it.`
               });
 
               await github.rest.issues.update({
@@ -66,8 +50,10 @@ jobs:
               let errorMessage = error.message;
               if (error.status === 422) {
                 errorMessage = "User is already a member or has a pending invitation.";
+              } else if (error.status === 404) {
+                errorMessage = "Organization not found — check that ORG_INVITATION_TOKEN has admin:org scope and access to this org.";
               }
-              
+
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
